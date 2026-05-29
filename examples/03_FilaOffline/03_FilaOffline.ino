@@ -34,7 +34,7 @@ void aoConectarMQTT() {
 void setup() {
     configurarDebug();
     conectividade.registrarCallbackMQTTConectado(aoConectarMQTT);
-    conectividade.begin();
+    conectividade.beginTLS();
     debugInfo("Setup concluído. Publicando a cada 3s independente do estado.\n");
 }
 

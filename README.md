@@ -20,7 +20,7 @@ Esta biblioteca usa **máquinas de estado** processadas no `loop()`:
 
 ```cpp
 // ✓ Não-bloqueante — setup() retorna imediatamente
-conectividade.begin(wifi, mqtt, topicos);
+conectividade.beginSimples(wifi, mqtt, topicos);
 
 void loop() {
     conectividade.update();   // avança sem travar
@@ -81,7 +81,7 @@ ConfigTopicos topicos = { pub, 1, rec, 1 };
 
 void setup() {
     configurarDebug(DEBUG_INFO, 4);
-    conectividade.begin(wifi, mqtt, topicos);
+    conectividade.beginSimples(wifi, mqtt, topicos);
 }
 
 void loop() {
@@ -103,7 +103,7 @@ const char meuCertCA[] PROGMEM = R"EOF(
 ConfigMQTT mqtt = { "broker.hivemq.com", 8883, "esp32_id", "usuario", "senha" };
 ConfigTLS  tls  = { meuCertCA };
 
-conectividade.begin(wifi, mqtt, tls, topicos);
+conectividade.beginTLS(wifi, mqtt, tls, topicos);
 ```
 
 ### Modo AWS IoT Core
@@ -120,7 +120,7 @@ ConfigAWS aws = {
     awsCertCA, awsCertCRT, awsCertPrivate
 };
 
-conectividade.begin(wifi, aws, topicos);
+conectividade.beginAWS(wifi, aws, topicos);
 ```
 
 ---
@@ -185,13 +185,13 @@ ConfigTopicos topicos = {
 
 ```cpp
 // Modo SIMPLES
-conectividade.begin(wifi, mqtt, topicos);
+conectividade.beginSimples(wifi, mqtt, topicos);
 
 // Modo TLS
-conectividade.begin(wifi, mqtt, tls, topicos);
+conectividade.beginTLS(wifi, mqtt, tls, topicos);
 
 // Modo AWS IoT
-conectividade.begin(wifi, aws, topicos);
+conectividade.beginAWS(wifi, aws, topicos);
 ```
 
 ### Loop
@@ -205,7 +205,7 @@ conectividade.update();   // SEMPRE no loop() — nunca omita
 ```cpp
 // Aumenta o limite para payloads maiores que 256 bytes
 conectividade.configurarBufferMQTT(1024);
-conectividade.begin(wifi, mqtt, topicos);
+conectividade.beginSimples(wifi, mqtt, topicos);
 ```
 
 | Parâmetro | Padrão | Máximo recomendado |

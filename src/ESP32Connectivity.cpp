@@ -53,9 +53,9 @@ static const char* traduzirCodigoMQTT(int c)
 // Inicialização — três sobrecargas (SIMPLES, TLS, AWS)
 // =============================================================================
 
-void ESP32Connectivity::begin(const ConfigWiFi& wifi,
-                               const ConfigMQTT& mqtt,
-                               const ConfigTopicos& topicos)
+void ESP32Connectivity::beginSimples(const ConfigWiFi& wifi,
+                                      const ConfigMQTT& mqtt,
+                                      const ConfigTopicos& topicos)
 {
     _modo    = ModoConexao::SIMPLES;
     _wifi    = wifi;
@@ -64,10 +64,10 @@ void ESP32Connectivity::begin(const ConfigWiFi& wifi,
     _iniciarWiFi();
 }
 
-void ESP32Connectivity::begin(const ConfigWiFi& wifi,
-                               const ConfigMQTT& mqtt,
-                               const ConfigTLS& tls,
-                               const ConfigTopicos& topicos)
+void ESP32Connectivity::beginTLS(const ConfigWiFi& wifi,
+                                  const ConfigMQTT& mqtt,
+                                  const ConfigTLS& tls,
+                                  const ConfigTopicos& topicos)
 {
     _modo    = ModoConexao::TLS;
     _wifi    = wifi;
@@ -77,9 +77,9 @@ void ESP32Connectivity::begin(const ConfigWiFi& wifi,
     _iniciarWiFi();
 }
 
-void ESP32Connectivity::begin(const ConfigWiFi& wifi,
-                               const ConfigAWS& aws,
-                               const ConfigTopicos& topicos)
+void ESP32Connectivity::beginAWS(const ConfigWiFi& wifi,
+                                   const ConfigAWS& aws,
+                                   const ConfigTopicos& topicos)
 {
     _modo    = ModoConexao::AWS_IOT;
     _wifi    = wifi;

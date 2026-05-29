@@ -51,7 +51,7 @@ void setup() {
     conectividade.registrarCallbackMQTTDesconectado(aoDesconectarMQTT);
     conectividade.registrarCallbackMensagem(aoReceberMensagem);
 
-    conectividade.begin();
+    conectividade.beginTLS();
 
     debugInfo("Setup concluído.\n");
 }

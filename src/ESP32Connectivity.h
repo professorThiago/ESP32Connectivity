@@ -163,49 +163,44 @@ public:
     // -----------------------------------------------------------------------
 
     /**
-     * @brief Inicia a conectividade no modo SIMPLES (sem criptografia).
-     *
-     * @param wifi     Credenciais WiFi.
-     * @param mqtt     Configuração do broker MQTT.
-     * @param topicos  Tópicos de publicação e recebimento.
+     * @brief Inicia no modo SIMPLES — sem criptografia.
+     * Indicado para redes locais confiáveis. Porta padrão: 1883.
      *
      * @par Exemplo
      * @code
-     * ConfigWiFi wifi = { "MinhaRede", "senha" };
-     * ConfigMQTT mqtt = { "192.168.1.100", 1883, "esp32_sala", "", "" };
-     * const char* pub[] = { "casa/sala/status" };
-     * const char* rec[] = { "casa/sala/comando" };
-     * ConfigTopicos top = { pub, 1, rec, 1 };
-     * conectividade.begin(wifi, mqtt, top);
+     * conectividade.beginSimples(wifi, mqtt, topicos);
      * @endcode
      */
-    void begin(const ConfigWiFi& wifi,
-               const ConfigMQTT& mqtt,
-               const ConfigTopicos& topicos);
+    void beginSimples(const ConfigWiFi& wifi,
+                      const ConfigMQTT& mqtt,
+                      const ConfigTopicos& topicos);
 
     /**
-     * @brief Inicia a conectividade no modo TLS.
+     * @brief Inicia no modo TLS — conexão criptografada.
+     * Indicado para brokers públicos (HiveMQ, Mosquitto Cloud, etc.). Porta padrão: 8883.
      *
-     * @param wifi     Credenciais WiFi.
-     * @param mqtt     Configuração do broker MQTT.
-     * @param tls      Certificado CA do broker.
-     * @param topicos  Tópicos de publicação e recebimento.
+     * @par Exemplo
+     * @code
+     * conectividade.beginTLS(wifi, mqtt, tls, topicos);
+     * @endcode
      */
-    void begin(const ConfigWiFi& wifi,
-               const ConfigMQTT& mqtt,
-               const ConfigTLS& tls,
-               const ConfigTopicos& topicos);
+    void beginTLS(const ConfigWiFi& wifi,
+                  const ConfigMQTT& mqtt,
+                  const ConfigTLS& tls,
+                  const ConfigTopicos& topicos);
 
     /**
-     * @brief Inicia a conectividade no modo AWS IoT Core (mTLS).
+     * @brief Inicia no modo AWS IoT Core — mTLS com certificado de dispositivo.
+     * Porta padrão: 8883.
      *
-     * @param wifi     Credenciais WiFi.
-     * @param aws      Configuração e certificados AWS.
-     * @param topicos  Tópicos de publicação e recebimento.
+     * @par Exemplo
+     * @code
+     * conectividade.beginAWS(wifi, aws, topicos);
+     * @endcode
      */
-    void begin(const ConfigWiFi& wifi,
-               const ConfigAWS& aws,
-               const ConfigTopicos& topicos);
+    void beginAWS(const ConfigWiFi& wifi,
+                  const ConfigAWS& aws,
+                  const ConfigTopicos& topicos);
 
     // -----------------------------------------------------------------------
     // Loop principal

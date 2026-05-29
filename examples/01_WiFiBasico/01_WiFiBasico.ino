@@ -37,7 +37,7 @@ void setup() {
     conectividade.registrarCallbackWiFiDesconectado(aoDesconectarWiFi);
 
     // begin() não bloqueia — setup() retorna imediatamente
-    conectividade.begin();
+    conectividade.beginTLS();
 
     debugInfo("setup() concluído. Loop iniciando...\n");
 }
