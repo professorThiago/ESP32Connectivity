@@ -23,7 +23,7 @@ Esta biblioteca usa **máquinas de estado** processadas no `loop()`:
 ```cpp
 // ✓ Não-bloqueante — setup() retorna imediatamente
 conectividade.begin();   // inicia a conexão, não espera
-// ...
+
 void loop() {
     conectividade.update();   // avança os estados sem travar
     // seu código continua executando normalmente
@@ -41,6 +41,7 @@ Isso permite que o programa grave dados em memória, pisque LEDs, leia sensores 
 - ✅ Suporte a MQTT simples, MQTT com TLS e **AWS IoT Core** (mTLS).
 - ✅ **Fila offline:** mensagens publicadas sem MQTT conectado são salvas e enviadas automaticamente ao reconectar.
 - ✅ Callbacks para todos os eventos: WiFi conectado/desconectado, MQTT conectado/desconectado, mensagem recebida.
+- ✅ Diagnóstico detalhado: códigos de erro WiFi e MQTT traduzidos em português com dicas de solução.
 
 ---
 
@@ -49,44 +50,66 @@ Isso permite que o programa grave dados em memória, pisque LEDs, leia sensores 
 ```ini
 lib_deps =
     https://github.com/professorThiago/ESP32Connectivity
-    https://github.com/professorThiago/DebugManager
-    knolleary/PubSubClient @ ^2.8
 ```
+
+> A biblioteca baixa automaticamente o **DebugManager** e o **PubSubClient** como dependências.
 
 ---
 
-## Configuração (secrets.h / secrets.cpp)
+## Configurando um projeto novo
 
-Toda a configuração fica em `secrets.h` e `secrets.cpp` no projeto, fora da biblioteca:
+### 1. Estrutura de pastas
+
+```
+meu_projeto/
+├── platformio.ini
+├── .gitignore          ← adicione: src/secrets.cpp
+└── src/
+    ├── main.cpp
+    ├── secrets.h       ← copie de examples/00_Template/
+    └── secrets.cpp     ← copie de examples/00_Template/ e preencha
+```
+
+### 2. Copie os arquivos de template
+
+Na pasta `examples/00_Template/` desta biblioteca há três arquivos prontos:
+
+| Arquivo | O que fazer |
+|---------|-------------|
+| `secrets.h` | Copie para `src/secrets.h` — não edite |
+| `secrets.cpp` | Copie para `src/secrets.cpp` e preencha os campos `"PREENCHER"` |
+| `00_Template.ino` | Copie para `src/main.cpp` e implemente os callbacks |
+
+### 3. Proteja suas credenciais
+
+Adicione ao `.gitignore` do projeto:
+
+```
+src/secrets.cpp
+```
+
+### 4. Preencha o secrets.cpp
+
+Os campos principais:
 
 ```cpp
 // WiFi
 const char* WIFI_SSID  = "MinhaRede";
 const char* WIFI_SENHA = "minha_senha";
 
-// MQTT (broker comum com TLS)
+// Nível de debug — 3 (INFO) é um bom padrão para desenvolvimento
+const int DEBUG_NIVEL_INICIAL = 3;
+
+// MQTT com TLS
 const char* MQTT_BROKER    = "broker.exemplo.com";
 const int   MQTT_PORTA     = 8883;
 const char* MQTT_CLIENT_ID = "esp32_meu_projeto";
 const char* MQTT_USUARIO   = "usuario";
 const char* MQTT_SENHA     = "senha";
 const bool  MQTT_TLS       = true;
-const char  MQTT_CERTIFICADO_CA[] PROGMEM = R"EOF( ... )EOF";
 
-// AWS IoT Core (define USAR_AWS_IOT = true e preencha os certificados)
-const bool  USAR_AWS_IOT       = false;
-const char* AWS_IOT_ENDPOINT   = "xxxx.iot.us-east-1.amazonaws.com";
-const int   AWS_IOT_PORT       = 8883;
-const char* AWS_IOT_CLIENT_ID  = "meu_dispositivo";
-const char  AWS_CERT_CA[]      PROGMEM = R"EOF( ... )EOF";
-const char  AWS_CERT_CRT[]     PROGMEM = R"CRT( ... )CRT";
-const char  AWS_CERT_PRIVATE[] PROGMEM = R"KEY( ... )KEY";
-
-// Tópicos
-const char* TOPICOS_PUBLICAR[] = { "meu/topico/status", "meu/topico/log" };
-const char* TOPICOS_RECEBER[]  = { "meu/topico/comando" };
-const int TOTAL_TOPICOS_PUBLICAR = sizeof(TOPICOS_PUBLICAR) / sizeof(TOPICOS_PUBLICAR[0]);
-const int TOTAL_TOPICOS_RECEBER  = sizeof(TOPICOS_RECEBER)  / sizeof(TOPICOS_RECEBER[0]);
+// OU: AWS IoT Core — defina USAR_AWS_IOT = true e cole os certificados
+const bool USAR_AWS_IOT = false;
 ```
 
 ---
@@ -192,6 +215,7 @@ conectividade.registrarCallbackMQTTDesconectado([]() { ... } );
 
 | Exemplo | Descrição |
 |---------|-----------|
+| `00_Template` | **Ponto de partida** — copie para o seu projeto e parametrize |
 | `01_WiFiBasico` | Conexão WiFi não-bloqueante com callbacks |
 | `02_MQTTBasico` | WiFi + MQTT com publicação periódica e recebimento |
 | `03_FilaOffline` | Demonstra enfileiramento e drenagem automática |
