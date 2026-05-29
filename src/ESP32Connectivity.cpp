@@ -303,7 +303,7 @@ void ESP32Connectivity::_processarMQTT()
 
                 _inscreverTopicos();
                 if (_topicos.nPublicar > 0)
-                    _publicarDireto(_topicos.publicar[0], "ESP32 conectado ao MQTT");
+                    _publicarDireto(_topicos.publicar[0], "ESP32 conectado ao MQTT", 0, false);
 
                 if (_cbMQTTConectado) _cbMQTTConectado();
             }
@@ -422,15 +422,50 @@ void ESP32Connectivity::_configurarClienteMQTT()
 }
 
 // =============================================================================
-// Publicação — FIX: enfileira sempre que não conseguir publicar direto
+// =============================================================================
+// Política de fila e QoS padrão
 // =============================================================================
 
-bool ESP32Connectivity::publicar(int indiceTopico, const char* mensagem)
+void ESP32Connectivity::definirPoliticaFila(PoliticaFila politica)
 {
-    return publicar(topicoPublicacao(indiceTopico), mensagem);
+    _politicaFila = politica;
+    switch (politica)
+    {
+        case PoliticaFila::FILA_COMPLETA:
+            debugVerbose("Politica de fila: FILA_COMPLETA"); break;
+        case PoliticaFila::APENAS_ULTIMO:
+            debugVerbose("Politica de fila: APENAS_ULTIMO"); break;
+        case PoliticaFila::DESCARTAR:
+            debugVerbose("Politica de fila: DESCARTAR");     break;
+    }
 }
 
-bool ESP32Connectivity::publicar(const char* topico, const char* mensagem)
+PoliticaFila ESP32Connectivity::obterPoliticaFila() const { return _politicaFila; }
+
+void ESP32Connectivity::definirQoSPadrao(uint8_t qos, bool retained)
+{
+    _qosPadrao      = (qos > 1) ? 1 : qos;
+    _retainedPadrao = retained;
+    debugVerbose("QoS padrao: " + String(_qosPadrao) +
+                 " | Retained padrao: " + String(_retainedPadrao ? "true" : "false"));
+}
+
+// =============================================================================
+// Publicação
+// =============================================================================
+
+bool ESP32Connectivity::publicar(int indiceTopico, const char* mensagem, bool enfileirar)
+{
+    return publicar(topicoPublicacao(indiceTopico), mensagem, enfileirar);
+}
+
+bool ESP32Connectivity::publicar(const char* topico, const char* mensagem, bool enfileirar)
+{
+    return publicarQoS(topico, mensagem, _qosPadrao, _retainedPadrao, enfileirar);
+}
+
+bool ESP32Connectivity::publicarQoS(const char* topico, const char* mensagem,
+                                     uint8_t qos, bool retained, bool enfileirar)
 {
     if (!topico || strlen(topico) == 0)
     {
@@ -438,31 +473,69 @@ bool ESP32Connectivity::publicar(const char* topico, const char* mensagem)
         return false;
     }
 
-    // Estratégia: enfileira SEMPRE primeiro, depois tenta enviar.
-    // Se o envio direto funcionar, remove da fila.
-    // Garante que nenhuma mensagem seja perdida mesmo se a conexão
-    // cair entre a verificação e o envio efetivo.
-    _enfileirar(topico, mensagem);
+    qos = (qos > 1) ? 1 : qos;
 
-    // Tenta drenar a fila imediatamente se estiver conectado
     bool redeOk = (_estadoWiFi == EstadoWiFi::CONECTADO) &&
                   (WiFi.status() == WL_CONNECTED)         &&
                   (_estadoMQTT  == EstadoMQTT::CONECTADO) &&
                   (_mqttClient.connected());
 
-    if (redeOk) _drenaFila();
+    // ── Sem fila (enfileirar=false): descarta se offline ─────
+    if (!enfileirar)
+    {
+        if (redeOk) return _publicarDireto(topico, mensagem, qos, retained);
+        debugVerbose("Mensagem descartada (enfileirar=false, offline).");
+        return false;
+    }
 
-    // Retorna true se a fila foi drenada completamente (mensagem enviada)
+    // ── Política DESCARTAR ────────────────────────────────────
+    if (_politicaFila == PoliticaFila::DESCARTAR)
+    {
+        if (redeOk) return _publicarDireto(topico, mensagem, qos, retained);
+        debugVerbose("Politica DESCARTAR: mensagem descartada (offline).");
+        return false;
+    }
+
+    // ── Política APENAS_ULTIMO ────────────────────────────────
+    if (_politicaFila == PoliticaFila::APENAS_ULTIMO)
+    {
+        if (_filaTamanho > 0)
+        {
+            debugVerbose("Politica APENAS_ULTIMO: substituindo mensagem anterior.");
+            for (uint16_t i = 0; i < _filaSlots; i++) _fila[i].ocupado = false;
+            _filaInicio = _filaFim = _filaTamanho = 0;
+        }
+        _enfileirar(topico, mensagem, qos, retained);
+        if (redeOk) _drenaFila();
+        return (_filaTamanho == 0);
+    }
+
+    // ── Política FILA_COMPLETA (padrão) ──────────────────────
+    _enfileirar(topico, mensagem, qos, retained);
+    if (redeOk) _drenaFila();
     return (_filaTamanho == 0);
 }
 
-bool ESP32Connectivity::_publicarDireto(const char* topico, const char* payload)
+bool ESP32Connectivity::_publicarDireto(const char* topico, const char* payload,
+                                         uint8_t qos, bool retained)
 {
-    bool ok = _mqttClient.publish(topico, payload);
-    if (ok) {
-        debugInfo("MQTT publicado em '" + String(topico) + "'");
+    bool ok;
+    if (qos == 1)
+        ok = _mqttClient.publish(topico,
+                                 reinterpret_cast<const uint8_t*>(payload),
+                                 strlen(payload), retained);
+    else
+        ok = _mqttClient.publish(topico, payload, retained);
+
+    if (ok)
+    {
+        debugInfo("MQTT publicado em '" + String(topico) +
+                  "' [QoS " + String(qos) +
+                  (retained ? ", retained" : "") + "]");
         debugTudo("Payload: " + String(payload));
-    } else {
+    }
+    else
+    {
         debugErro("MQTT: falha ao publicar em '" + String(topico) + "'");
         debugErro("Codigo: " + String(traduzirCodigoMQTT(_mqttClient.state())));
     }
@@ -473,7 +546,8 @@ bool ESP32Connectivity::_publicarDireto(const char* topico, const char* payload)
 // Fila offline
 // =============================================================================
 
-void ESP32Connectivity::_enfileirar(const char* topico, const char* payload)
+void ESP32Connectivity::_enfileirar(const char* topico, const char* payload,
+                                     uint8_t qos, bool retained)
 {
     if (_filaTamanho >= _filaSlots)
     {
@@ -488,7 +562,9 @@ void ESP32Connectivity::_enfileirar(const char* topico, const char* payload)
     strncpy(slot.payload, payload, CONNECTIVITY_FILA_PAYLOAD_MAX - 1);
     slot.topico [CONNECTIVITY_FILA_TOPICO_MAX  - 1] = '\0';
     slot.payload[CONNECTIVITY_FILA_PAYLOAD_MAX - 1] = '\0';
-    slot.ocupado = true;
+    slot.qos      = qos;
+    slot.retained = retained;
+    slot.ocupado  = true;
 
     _filaFim = (_filaFim + 1) % _filaSlots;
     _filaTamanho++;
@@ -507,7 +583,8 @@ void ESP32Connectivity::_drenaFila()
         MensagemFila& slot = _fila[_filaInicio];
         if (slot.ocupado)
         {
-            if (!_publicarDireto(slot.topico, slot.payload)) break;
+            if (!_publicarDireto(slot.topico, slot.payload,
+                                  slot.qos, slot.retained)) break;
             slot.ocupado = false;
         }
         _filaInicio = (_filaInicio + 1) % _filaSlots;

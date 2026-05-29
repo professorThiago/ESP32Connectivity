@@ -1,5 +1,5 @@
 {
-  "name": "ESP32Connectivity",
+  "name": "ConectividadeESP32",
   "version": "3.0.0",
   "description": "Gerenciamento não-bloqueante de WiFi e MQTT para ESP32. Reconexão automática, suporte a AWS IoT Core e fila de mensagens offline.",
   "keywords": [

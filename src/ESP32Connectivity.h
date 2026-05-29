@@ -108,6 +108,33 @@ enum class ModoConexao : uint8_t {
     AWS_IOT    ///< AWS IoT Core com mTLS — requer certificado de dispositivo (porta 8883)
 };
 
+/**
+ * @brief Define o comportamento da fila quando o MQTT está offline.
+ *
+ * | Política | Quando usar |
+ * |----------|-------------|
+ * | `FILA_COMPLETA` | Dados históricos importantes — logs, eventos, alarmes |
+ * | `APENAS_ULTIMO` | Só o estado atual importa — status, posição, modo |
+ * | `DESCARTAR` | Dados em tempo real — temperatura, sensores contínuos |
+ *
+ * @par Exemplo
+ * @code
+ * // Sensor de temperatura: valor antigo não tem utilidade
+ * conectividade.definirPoliticaFila(PoliticaFila::DESCARTAR);
+ *
+ * // Status do dispositivo: só o mais recente importa
+ * conectividade.definirPoliticaFila(PoliticaFila::APENAS_ULTIMO);
+ *
+ * // Log de eventos: todos os eventos devem chegar
+ * conectividade.definirPoliticaFila(PoliticaFila::FILA_COMPLETA); // padrão
+ * @endcode
+ */
+enum class PoliticaFila : uint8_t {
+    FILA_COMPLETA, ///< Enfileira todas as mensagens. Descarta a mais antiga quando cheia.
+    APENAS_ULTIMO, ///< Mantém apenas a mensagem mais recente. Substitui se já houver uma.
+    DESCARTAR      ///< Não enfileira. Descarta silenciosamente se offline.
+};
+
 // ---------------------------------------------------------------------------
 // Structs de configuração
 // ---------------------------------------------------------------------------
@@ -242,6 +269,28 @@ public:
     // -----------------------------------------------------------------------
 
     /**
+     * @brief Define a política de enfileiramento quando o MQTT está offline.
+     *
+     * Padrão: `PoliticaFila::FILA_COMPLETA`.
+     * Pode ser alterada a qualquer momento, inclusive durante a execução.
+     *
+     * @param politica  `FILA_COMPLETA`, `APENAS_ULTIMO` ou `DESCARTAR`.
+     *
+     * @par Exemplo
+     * @code
+     * // Sensor contínuo — descarta se offline
+     * conectividade.definirPoliticaFila(PoliticaFila::DESCARTAR);
+     *
+     * // Status — substitui pelo mais recente
+     * conectividade.definirPoliticaFila(PoliticaFila::APENAS_ULTIMO);
+     * @endcode
+     */
+    void definirPoliticaFila(PoliticaFila politica);
+
+    /** @brief Retorna a política de fila atualmente configurada. */
+    PoliticaFila obterPoliticaFila() const;
+
+    /**
      * @brief Configura o tamanho do buffer interno do PubSubClient.
      *
      * Por padrão o PubSubClient limita mensagens a 256 bytes. Use este
@@ -281,23 +330,81 @@ public:
 
     /**
      * @brief Publica em um tópico pelo índice.
-     * Se o MQTT estiver offline, enfileira para envio posterior.
      *
      * @param indiceTopico  Índice em `ConfigTopicos::publicar[]`.
      * @param mensagem      Payload a publicar.
-     * @return `true` se publicado imediatamente; `false` se enfileirado.
+     * @param enfileirar    Se `true` (padrão), respeita a `PoliticaFila` configurada
+     *                      quando offline. Se `false`, descarta a mensagem se offline,
+     *                      independente da política.
+     * @return `true` se publicado imediatamente; `false` se enfileirado ou descartado.
+     *
+     * @par Exemplo
+     * @code
+     * conectividade.publicar(0, "online");         // enfileira se offline (padrão)
+     * conectividade.publicar(0, "ping", false);    // descarta se offline
+     * @endcode
      */
-    bool publicar(int indiceTopico, const char* mensagem);
+    bool publicar(int indiceTopico, const char* mensagem, bool enfileirar = true);
 
     /**
      * @brief Publica em um tópico pelo nome completo.
-     * Se o MQTT estiver offline, enfileira para envio posterior.
      *
-     * @param topico    Tópico MQTT completo.
-     * @param mensagem  Payload a publicar.
-     * @return `true` se publicado imediatamente; `false` se enfileirado.
+     * @param topico        Tópico MQTT completo.
+     * @param mensagem      Payload a publicar.
+     * @param enfileirar    Se `true` (padrão), respeita a `PoliticaFila` configurada.
+     *                      Se `false`, descarta se offline.
+     * @return `true` se publicado imediatamente; `false` se enfileirado ou descartado.
      */
-    bool publicar(const char* topico, const char* mensagem);
+    bool publicar(const char* topico, const char* mensagem, bool enfileirar = true);
+
+    /**
+     * @brief Publica com controle total de QoS e flag retained.
+     *
+     * @details
+     * O PubSubClient suporta apenas **QoS 0** e **QoS 1**:
+     * - `QoS 0` (at most once): dispara e esquece. Mais rápido, sem confirmação.
+     * - `QoS 1` (at least once): o broker confirma o recebimento (PUBACK).
+     *   A mensagem pode chegar mais de uma vez se o PUBACK se perder.
+     * - `QoS 2` não é suportado pelo PubSubClient.
+     *
+     * A flag `retained` instrui o broker a guardar a última mensagem do tópico
+     * e entregá-la imediatamente a novos assinantes.
+     *
+     * @param topico      Tópico MQTT completo.
+     * @param mensagem    Payload a publicar.
+     * @param qos         Nível de QoS: `0` ou `1`.
+     * @param retained    `true` para mensagem retida no broker.
+     * @param enfileirar  Se `true` (padrão), respeita a `PoliticaFila` se offline.
+     * @return `true` se publicado imediatamente; `false` se enfileirado ou descartado.
+     *
+     * @par Exemplo
+     * @code
+     * // Status retained — novos assinantes recebem imediatamente
+     * conectividade.publicarQoS("sala/status", "online", 1, true);
+     *
+     * // Leitura de sensor — QoS 0, sem retenção
+     * conectividade.publicarQoS("sala/temperatura", "23.5", 0, false);
+     * @endcode
+     */
+    bool publicarQoS(const char* topico, const char* mensagem,
+                     uint8_t qos, bool retained, bool enfileirar = true);
+
+    /**
+     * @brief Define o QoS e retained padrão para todas as publicações.
+     *
+     * Evita repetir os parâmetros em cada chamada quando o projeto usa
+     * sempre os mesmos valores.
+     *
+     * @param qos       Nível de QoS padrão: `0` ou `1`. (padrão: `0`)
+     * @param retained  Flag retained padrão. (padrão: `false`)
+     *
+     * @par Exemplo
+     * @code
+     * conectividade.definirQoSPadrao(1, true);   // todas as publicações: QoS 1, retained
+     * conectividade.publicar(0, "online");        // usa QoS 1 e retained automaticamente
+     * @endcode
+     */
+    void definirQoSPadrao(uint8_t qos, bool retained);
 
     // -----------------------------------------------------------------------
     // Consulta de tópicos
@@ -354,6 +461,7 @@ private:
     ConfigTLS    _tls     = {};
     ConfigAWS    _aws     = {};
     ConfigTopicos _topicos = {};
+    PoliticaFila _politicaFila = PoliticaFila::FILA_COMPLETA;
 
     void _iniciarWiFi();
     void _configurarClienteMQTT();
@@ -371,20 +479,28 @@ private:
     // -----------------------------------------------------------------------
 
     struct MensagemFila {
-        char topico [CONNECTIVITY_FILA_TOPICO_MAX];
-        char payload[CONNECTIVITY_FILA_PAYLOAD_MAX];
-        bool ocupado = false;
+        char    topico  [CONNECTIVITY_FILA_TOPICO_MAX];
+        char    payload [CONNECTIVITY_FILA_PAYLOAD_MAX];
+        uint8_t qos     = 0;
+        bool    retained = false;
+        bool    ocupado  = false;
     };
 
-    MensagemFila* _fila      = nullptr;  ///< Alocado em _iniciarWiFi() — SRAM ou PSRAM
-    uint16_t      _filaSlots = 0;        ///< Número real de slots alocados
+    MensagemFila* _fila      = nullptr;
+    uint16_t      _filaSlots = 0;
     uint16_t      _filaInicio  = 0;
     uint16_t      _filaFim     = 0;
     uint16_t      _filaTamanho = 0;
 
-    void _enfileirar(const char* topico, const char* payload);
+    // QoS e retained padrão (usados por publicar())
+    uint8_t _qosPadrao      = 0;
+    bool    _retainedPadrao = false;
+
+    void _enfileirar(const char* topico, const char* payload,
+                     uint8_t qos, bool retained);
     void _drenaFila();
-    bool _publicarDireto(const char* topico, const char* payload);
+    bool _publicarDireto(const char* topico, const char* payload,
+                         uint8_t qos, bool retained);
 
     // -----------------------------------------------------------------------
     // Callbacks
