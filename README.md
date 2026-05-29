@@ -1,4 +1,4 @@
-# ESP32Connectivity
+# ConectividadeESP32
 
 Biblioteca Arduino/ESP32 para gerenciamento **não-bloqueante** de WiFi e MQTT, com reconexão automática e fila de mensagens offline.
 
