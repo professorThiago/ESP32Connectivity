@@ -1,0 +1,43 @@
+{
+  "name": "ESP32Connectivity",
+  "version": "2.0.0",
+  "description": "Gerenciamento não-bloqueante de WiFi e MQTT para ESP32. Reconexão automática, suporte a AWS IoT Core e fila de mensagens offline.",
+  "keywords": [
+    "wifi",
+    "mqtt",
+    "aws",
+    "iot",
+    "esp32",
+    "nao-bloqueante",
+    "fila",
+    "offline"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/professorThiago/ESP32Connectivity.git"
+  },
+  "authors": [
+    {
+      "name": "professorThiago",
+      "url": "https://github.com/professorThiago",
+      "maintainer": true
+    }
+  ],
+  "license": "MIT",
+  "frameworks": [
+    "arduino"
+  ],
+  "platforms": [
+    "espressif32"
+  ],
+  "dependencies": {
+    "knolleary/PubSubClient": "^2.8",
+    "https://github.com/professorThiago/DebugManager": "*"
+  },
+  "export": {
+    "include": [
+      "src",
+      "examples"
+    ]
+  }
+}
