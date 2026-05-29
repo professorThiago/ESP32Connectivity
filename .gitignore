@@ -4,4 +4,6 @@ __pycache__/
 *.pyc
 .DS_Store
 Thumbs.db
+
+# Credenciais — NUNCA suba para o repositório
 src/secrets.cpp

@@ -1,65 +1,54 @@
 /**
  * @file secrets.cpp
- * @brief Configurações privadas do projeto — NÃO suba para o GitHub!
+ * @brief Credenciais e configurações do projeto.
  *
- * Copie este arquivo para src/secrets.cpp no seu projeto e preencha
- * os campos marcados com "PREENCHER".
+ * ╔══════════════════════════════════════════════════════════╗
+ * ║  ATENÇÃO: este arquivo NÃO deve ir para o GitHub!       ║
+ * ║  Adicione ao .gitignore do seu projeto:                 ║
+ * ║      src/secrets.cpp                                    ║
+ * ╚══════════════════════════════════════════════════════════╝
  *
- * Adicione ao .gitignore do seu projeto:
- *   src/secrets.cpp
+ * Copie este arquivo para src/secrets.cpp e preencha os campos.
  */
 
 #include "secrets.h"
-#include <Arduino.h>
 
-// =============================
-// WiFi
-// =============================
+// ── WiFi ─────────────────────────────────────────────────────
+const char* WIFI_SSID  = "NOME_DA_REDE";
+const char* WIFI_SENHA = "SENHA_DA_REDE";
 
-const char* WIFI_SSID  = "PREENCHER";   // nome da rede WiFi
-const char* WIFI_SENHA = "PREENCHER";   // senha da rede WiFi
+// ── MQTT ─────────────────────────────────────────────────────
+// Endereço do broker (hostname ou IP)
+const char* MQTT_BROKER    = "broker.exemplo.com";
 
-// =============================
-// MQTT
-// =============================
+// Porta: 1883 sem TLS, 8883 com TLS
+const int   MQTT_PORTA     = 8883;
 
-// Endereço do broker MQTT (ex: "broker.hivemq.com" ou IP local)
-const char* MQTT_BROKER    = "PREENCHER";
-const int   MQTT_PORTA     = 8883;          // 1883 sem TLS, 8883 com TLS
-
-// ID único deste dispositivo no broker (sem espaços)
+// ID único deste dispositivo (sem espaços)
 const char* MQTT_CLIENT_ID = "esp32_meu_projeto";
 
-// Deixe vazio ("") para conexão anônima
-const char* MQTT_USUARIO   = "PREENCHER";
-const char* MQTT_SENHA     = "PREENCHER";
+// Deixe "" para conexão anônima
+const char* MQTT_USUARIO   = "";
+const char* MQTT_SENHA     = "";
 
-// true  = conexão criptografada (recomendado)
-// false = sem criptografia (apenas redes locais confiáveis)
-const bool  MQTT_TLS       = true;
-
-// Certificado CA do broker MQTT (apenas se MQTT_TLS = true e não for AWS)
-// Deixe vazio ("") para usar setInsecure() — APENAS PARA TESTES
+// Certificado CA do broker em PEM (necessário se USAR_AWS_IOT = false e TLS = true)
+// Deixe vazio para usar setInsecure() — APENAS PARA TESTES
 const char MQTT_CERTIFICADO_CA[] PROGMEM = R"EOF(
 -----BEGIN CERTIFICATE-----
 
 -----END CERTIFICATE-----
 )EOF";
 
-// =============================
-// AWS IoT Core
-// =============================
-
+// ── AWS IoT Core ─────────────────────────────────────────────
 // true  = usa AWS IoT Core com mTLS (ignora as configurações MQTT acima)
-// false = usa broker MQTT comum configurado acima
+// false = usa broker MQTT comum
 const bool USAR_AWS_IOT = false;
 
-// Endpoint do AWS IoT Core (Console AWS → IoT Core → Configurações)
-const char* AWS_IOT_ENDPOINT  = "PREENCHER.iot.us-east-1.amazonaws.com";
+const char* AWS_IOT_ENDPOINT  = "XXXX.iot.us-east-1.amazonaws.com";
 const int   AWS_IOT_PORT      = 8883;
-const char* AWS_IOT_CLIENT_ID = "PREENCHER";
+const char* AWS_IOT_CLIENT_ID = "meu_thing_name";
 
-// Certificado raiz da Amazon (mesmo para todos os projetos AWS)
+// Certificado raiz da Amazon (igual para todos os projetos AWS)
 const char AWS_CERT_CA[] PROGMEM = R"EOF(
 -----BEGIN CERTIFICATE-----
 
@@ -80,41 +69,33 @@ const char AWS_CERT_PRIVATE[] PROGMEM = R"KEY(
 -----END RSA PRIVATE KEY-----
 )KEY";
 
-// =============================
-// Tópicos MQTT
-// =============================
-
-// Tópicos nos quais este ESP32 publica mensagens
-// Acesse por índice: conectividade.publicar(0, "msg") → publica no primeiro tópico
+// ── Tópicos MQTT ─────────────────────────────────────────────
+// Tópicos nos quais o ESP32 publica — acesse por índice: publicar(0, "msg")
 const char* TOPICOS_PUBLICAR[] = {
-    "meu_projeto/esp32/status",     // índice 0 — usado para anunciar conexão
-    "meu_projeto/esp32/dados",      // índice 1
-    "meu_projeto/esp32/log",        // índice 2
+    "meu_projeto/esp32/status",   // índice 0 — reservado para anunciar conexão
+    "meu_projeto/esp32/dados",    // índice 1
+    "meu_projeto/esp32/log",      // índice 2
 };
 
-// Tópicos nos quais este ESP32 se inscreve para receber mensagens
-// As mensagens chegam via callback registrado em registrarCallbackMensagem()
+// Tópicos nos quais o ESP32 se inscreve para receber mensagens
 const char* TOPICOS_RECEBER[] = {
-    "meu_projeto/esp32/comando",    // índice 0
-    "meu_projeto/esp32/config",     // índice 1
+    "meu_projeto/esp32/comando",  // índice 0
+    "meu_projeto/esp32/config",   // índice 1
 };
 
 const int TOTAL_TOPICOS_PUBLICAR = sizeof(TOPICOS_PUBLICAR) / sizeof(TOPICOS_PUBLICAR[0]);
 const int TOTAL_TOPICOS_RECEBER  = sizeof(TOPICOS_RECEBER)  / sizeof(TOPICOS_RECEBER[0]);
 
-// =============================
-// Debug
-// =============================
-
+// ── Debug ─────────────────────────────────────────────────────
 // Nível de log padrão ao ligar:
 //   0 = DEBUG_NENHUM  — silencioso (produção)
 //   1 = DEBUG_ERRO    — apenas erros críticos
 //   2 = DEBUG_AVISO   — erros + avisos de reconexão
-//   3 = DEBUG_INFO    — fluxo normal (conectou, publicou)
+//   3 = DEBUG_INFO    — fluxo normal (recomendado para desenvolvimento)
 //   4 = DEBUG_VERBOSE — detalhes internos (tentativas, estados)
-//   5 = DEBUG_TUDO    — dados brutos e códigos de erro
+//   5 = DEBUG_TUDO    — payloads e códigos de erro brutos
 const int DEBUG_NIVEL_INICIAL = 3;
 
-// Pino com pull-up interno. Conecte ao GND antes de ligar para forçar DEBUG_TUDO.
-// Use -1 para desabilitar este recurso.
+// GPIO com pull-up interno. Conecte ao GND antes de ligar para forçar DEBUG_TUDO.
+// Use -1 para desabilitar.
 const int PINO_HABILITA_DEBUG_COMPLETO = 4;

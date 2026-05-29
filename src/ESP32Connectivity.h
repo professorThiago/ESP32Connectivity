@@ -3,76 +3,42 @@
  * @brief Gerenciamento não-bloqueante de WiFi e MQTT para ESP32.
  *
  * @details
- * Esta biblioteca unifica o gerenciamento de conectividade WiFi e MQTT
- * usando **máquinas de estado** em vez de `while()` bloqueantes. O
- * programa principal nunca fica preso aguardando conexão — o `update()`
- * avança os estados a cada chamada no `loop()`.
+ * Biblioteca independente — não depende de `secrets.h` do projeto.
+ * Toda a configuração é passada via structs em `begin()`.
  *
- * @par Funcionalidades
- * - Conexão WiFi e MQTT não-bloqueantes via máquina de estado.
- * - Reconexão automática de WiFi e MQTT quando a conexão cai.
- * - **Fila de mensagens offline:** publicações feitas sem MQTT conectado
- *   são enfileiradas e enviadas automaticamente ao reconectar.
- * - Suporte a MQTT simples, MQTT com TLS e AWS IoT Core (mTLS).
- * - Callbacks configuráveis para eventos de conexão/desconexão e
- *   recebimento de mensagens.
- *
- * @par Máquina de estados WiFi
- * @code
- *   DESCONECTADO ──begin()──> CONECTANDO ──sucesso──> CONECTADO
- *        ^                        |                       |
- *        |                    timeout/falha               |
- *        └────────────────────────┴──────── queda ────────┘
- * @endcode
- *
- * @par Máquina de estados MQTT
- * @code
- *   DESCONECTADO ──WiFi OK──> CONECTANDO ──sucesso──> CONECTADO
- *        ^                        |                       |
- *        |                    timeout/falha               |
- *        └────────────────────────┴──────── queda ────────┘
- * @endcode
+ * @par Modos de conexão MQTT
+ * | Modo | Quando usar |
+ * |------|-------------|
+ * | `ModoConexao::SIMPLES`  | Broker local sem criptografia |
+ * | `ModoConexao::TLS`      | Broker público com TLS (HiveMQ, Mosquitto, etc.) |
+ * | `ModoConexao::AWS_IOT`  | AWS IoT Core com mTLS (certificado de dispositivo) |
  *
  * @par Uso básico
  * @code
  * #include <ESP32Connectivity.h>
  *
- * void aoReceberMensagem(const char* topico, const String& msg) {
- *     Serial.println("Recebi: " + msg);
- * }
+ * // Preencha as structs com suas credenciais
+ * ConfigWiFi wifi   = { "MinhaRede", "minha_senha" };
+ * ConfigMQTT mqtt   = { "broker.exemplo.com", 8883, "esp32_id", "user", "pass" };
+ * ConfigTLS  tls    = { meuCertificadoCA };
+ * const char* pub[] = { "meu/topico/status" };
+ * const char* rec[] = { "meu/topico/comando" };
+ * ConfigTopicos topicos = { pub, 1, rec, 1 };
  *
  * void setup() {
- *     conectividade.begin();
- *     conectividade.registrarCallbackMensagem(aoReceberMensagem);
+ *     configurarDebug(DEBUG_INFO, 4);
+ *     conectividade.begin(wifi, mqtt, ModoConexao::TLS, tls, topicos);
  * }
  *
  * void loop() {
- *     conectividade.update();   // sempre no loop() — não bloqueia
- *
- *     // Publica mesmo offline: a mensagem vai para a fila
- *     conectividade.publicar(0, "hello world");
+ *     conectividade.update();
+ *     conectividade.publicar(0, "hello");
  * }
  * @endcode
  *
- * @note  `update()` **deve** ser chamado a cada iteração do `loop()`.
- *        Sem isso as máquinas de estado não avançam e a fila não é drenada.
- *
  * @author  professorThiago (https://github.com/professorThiago)
- * @version 1.0.0
- * @date    2026
+ * @version 3.0.0
  * @license MIT
- *
- * @par Licença MIT
- * Copyright (c) 2026 professorThiago\n
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:\n
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.\n
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
  */
 
 #ifndef ESP32_CONNECTIVITY_H
@@ -85,35 +51,99 @@
 #include <PubSubClient.h>
 
 // ---------------------------------------------------------------------------
-// Configurações da fila offline (ajuste conforme a RAM disponível)
+// Configuração da fila offline
+// Redefina ANTES do #include para personalizar sem alterar a biblioteca.
 // ---------------------------------------------------------------------------
 
-/** @brief Número máximo de mensagens retidas na fila offline. */
-#ifndef CONNECTIVITY_FILA_TAMANHO
-  #define CONNECTIVITY_FILA_TAMANHO 10
+/** @brief Slots na fila offline (número de mensagens). */
+#ifndef CONNECTIVITY_FILA_SLOTS
+  #define CONNECTIVITY_FILA_SLOTS 10
 #endif
 
-/** @brief Tamanho máximo do tópico em cada slot da fila (bytes). */
+/** @brief Tamanho máximo do tópico em cada slot (bytes). */
 #ifndef CONNECTIVITY_FILA_TOPICO_MAX
   #define CONNECTIVITY_FILA_TOPICO_MAX 64
 #endif
 
-/** @brief Tamanho máximo do payload em cada slot da fila (bytes). */
+/** @brief Tamanho máximo do payload em cada slot (bytes). */
 #ifndef CONNECTIVITY_FILA_PAYLOAD_MAX
   #define CONNECTIVITY_FILA_PAYLOAD_MAX 256
 #endif
 
 // ---------------------------------------------------------------------------
+// Modo de conexão MQTT
+// ---------------------------------------------------------------------------
+
+/**
+ * @brief Define o protocolo e nível de segurança da conexão MQTT.
+ */
+enum class ModoConexao : uint8_t {
+    SIMPLES,   ///< MQTT sem criptografia (porta 1883 — apenas redes locais confiáveis)
+    TLS,       ///< MQTT com TLS/SSL (porta 8883 — brokers públicos)
+    AWS_IOT    ///< AWS IoT Core com mTLS — requer certificado de dispositivo (porta 8883)
+};
+
+// ---------------------------------------------------------------------------
+// Structs de configuração
+// ---------------------------------------------------------------------------
+
+/**
+ * @brief Credenciais WiFi.
+ */
+struct ConfigWiFi {
+    const char* ssid;   ///< Nome da rede (SSID)
+    const char* senha;  ///< Senha da rede
+};
+
+/**
+ * @brief Configuração do broker MQTT.
+ * Usada nos modos `SIMPLES` e `TLS`.
+ */
+struct ConfigMQTT {
+    const char* broker;    ///< Endereço do broker (hostname ou IP)
+    int         porta;     ///< Porta (1883 sem TLS, 8883 com TLS)
+    const char* clientId;  ///< ID único deste dispositivo
+    const char* usuario;   ///< Usuário (deixe "" para conexão anônima)
+    const char* senha;     ///< Senha  (deixe "" para conexão anônima)
+};
+
+/**
+ * @brief Certificado CA para modo `TLS`.
+ * O certificado CA do broker em formato PEM.
+ * Deixe `certificadoCA = ""` para usar `setInsecure()` (apenas testes).
+ */
+struct ConfigTLS {
+    const char* certificadoCA;  ///< Certificado CA do broker em PEM
+};
+
+/**
+ * @brief Certificados e configuração do AWS IoT Core (modo `AWS_IOT`).
+ */
+struct ConfigAWS {
+    const char* endpoint;    ///< Endpoint AWS (xxxx.iot.região.amazonaws.com)
+    int         porta;       ///< Porta (normalmente 8883)
+    const char* clientId;    ///< Thing Name ou ID do dispositivo
+    const char* certCA;      ///< Certificado raiz Amazon (AmazonRootCA1.pem)
+    const char* certCRT;     ///< Certificado do dispositivo (.crt)
+    const char* certPrivate; ///< Chave privada do dispositivo (.key)
+};
+
+/**
+ * @brief Tópicos MQTT para publicação e recebimento.
+ */
+struct ConfigTopicos {
+    const char** publicar;   ///< Array de tópicos de publicação
+    int          nPublicar;  ///< Número de tópicos de publicação
+    const char** receber;    ///< Array de tópicos de recebimento (inscrição)
+    int          nReceber;   ///< Número de tópicos de recebimento
+};
+
+// ---------------------------------------------------------------------------
 // Tipos de callback
 // ---------------------------------------------------------------------------
 
-/** @brief Callback chamado ao receber uma mensagem MQTT. */
 typedef void (*CallbackMensagemMQTT)(const char* topico, const String& mensagem);
-
-/** @brief Callback chamado quando o WiFi conecta ou reconecta. */
 typedef void (*CallbackWiFi)(void);
-
-/** @brief Callback chamado quando o MQTT conecta, reconecta ou desconecta. */
 typedef void (*CallbackMQTT)(void);
 
 // ---------------------------------------------------------------------------
@@ -126,10 +156,6 @@ typedef void (*CallbackMQTT)(void);
 class ESP32Connectivity
 {
 public:
-    // -----------------------------------------------------------------------
-    // Construtor
-    // -----------------------------------------------------------------------
-
     ESP32Connectivity() = default;
 
     // -----------------------------------------------------------------------
@@ -137,86 +163,117 @@ public:
     // -----------------------------------------------------------------------
 
     /**
-     * @brief Inicializa WiFi e MQTT e inicia a tentativa de conexão.
+     * @brief Inicia a conectividade no modo SIMPLES (sem criptografia).
      *
-     * Deve ser chamado uma vez no `setup()`. A conexão é iniciada
-     * de forma **não-bloqueante** — o `setup()` retorna imediatamente
-     * e o `update()` avança os estados no `loop()`.
+     * @param wifi     Credenciais WiFi.
+     * @param mqtt     Configuração do broker MQTT.
+     * @param topicos  Tópicos de publicação e recebimento.
      *
      * @par Exemplo
      * @code
-     * void setup() {
-     *     configurarDebug();
-     *     conectividade.begin();
-     * }
+     * ConfigWiFi wifi = { "MinhaRede", "senha" };
+     * ConfigMQTT mqtt = { "192.168.1.100", 1883, "esp32_sala", "", "" };
+     * const char* pub[] = { "casa/sala/status" };
+     * const char* rec[] = { "casa/sala/comando" };
+     * ConfigTopicos top = { pub, 1, rec, 1 };
+     * conectividade.begin(wifi, mqtt, top);
      * @endcode
      */
-    void begin();
+    void begin(const ConfigWiFi& wifi,
+               const ConfigMQTT& mqtt,
+               const ConfigTopicos& topicos);
+
+    /**
+     * @brief Inicia a conectividade no modo TLS.
+     *
+     * @param wifi     Credenciais WiFi.
+     * @param mqtt     Configuração do broker MQTT.
+     * @param tls      Certificado CA do broker.
+     * @param topicos  Tópicos de publicação e recebimento.
+     */
+    void begin(const ConfigWiFi& wifi,
+               const ConfigMQTT& mqtt,
+               const ConfigTLS& tls,
+               const ConfigTopicos& topicos);
+
+    /**
+     * @brief Inicia a conectividade no modo AWS IoT Core (mTLS).
+     *
+     * @param wifi     Credenciais WiFi.
+     * @param aws      Configuração e certificados AWS.
+     * @param topicos  Tópicos de publicação e recebimento.
+     */
+    void begin(const ConfigWiFi& wifi,
+               const ConfigAWS& aws,
+               const ConfigTopicos& topicos);
 
     // -----------------------------------------------------------------------
-    // Loop principal — DEVE ser chamado em todo loop()
+    // Loop principal
     // -----------------------------------------------------------------------
 
     /**
      * @brief Avança as máquinas de estado e drena a fila offline.
-     *
-     * **Deve ser chamado em todo `loop()`**, sem delays longos entre
-     * chamadas. Responsável por:
-     * - Avançar a reconexão WiFi quando necessário.
-     * - Avançar a reconexão MQTT quando necessário.
-     * - Processar mensagens MQTT recebidas (`mqttClient.loop()`).
-     * - Drenar a fila de mensagens offline ao reconectar.
+     * **Deve ser chamado em todo `loop()`.**
      */
     void update();
 
     // -----------------------------------------------------------------------
-    // Estado da conexão
+    // Configuração da fila (chame antes do begin(), se necessário)
     // -----------------------------------------------------------------------
 
     /**
-     * @brief Retorna `true` se o WiFi está conectado.
-     */
-    bool wifiConectado() const;
-
-    /**
-     * @brief Retorna `true` se o MQTT está conectado.
-     */
-    bool mqttConectado() const;
-
-    /**
-     * @brief Retorna o número de mensagens atualmente na fila offline.
-     */
-    uint8_t mensagensNaFila() const;
-
-    // -----------------------------------------------------------------------
-    // Publicação de mensagens
-    // -----------------------------------------------------------------------
-
-    /**
-     * @brief Publica uma mensagem em um tópico pelo índice.
+     * @brief Configura o tamanho do buffer interno do PubSubClient.
      *
-     * Se o MQTT estiver conectado, publica imediatamente.
-     * Se não estiver, **enfileira** a mensagem para envio posterior.
-     * Se a fila estiver cheia, a mensagem mais antiga é descartada.
+     * Por padrão o PubSubClient limita mensagens a 256 bytes. Use este
+     * método para aumentar o limite se publicar payloads maiores (ex: JSON
+     * longos, leituras de sensores completas).
      *
-     * @param indiceTopico  Índice em `TOPICOS_PUBLICAR[]` (de secrets.h).
-     * @param mensagem      Payload a publicar.
-     * @return `true` se publicado imediatamente; `false` se enfileirado.
+     * @param tamanhoBytes  Tamanho máximo da mensagem MQTT em bytes.
+     *                      Inclui cabeçalho + tópico + payload.
+     *                      Padrão: 256. Recomendado máximo: 4096 no ESP32.
+     *
+     * @note Chame **antes** de `begin()`.
      *
      * @par Exemplo
      * @code
-     * conectividade.publicar(0, "ligado");    // tópico 0
-     * conectividade.publicar(1, "log: ok");   // tópico 1
+     * conectividade.configurarBufferMQTT(1024);   // mensagens até 1 KB
+     * conectividade.begin(wifi, mqtt, topicos);
      * @endcode
+     */
+    void configurarBufferMQTT(uint16_t tamanhoBytes);
+
+    // -----------------------------------------------------------------------
+    // Estado
+    // -----------------------------------------------------------------------
+
+    /** @brief Retorna `true` se o WiFi está conectado. */
+    bool wifiConectado() const;
+
+    /** @brief Retorna `true` se o MQTT está conectado. */
+    bool mqttConectado() const;
+
+    /** @brief Retorna o número de mensagens na fila offline. */
+    uint8_t mensagensNaFila() const;
+
+    // -----------------------------------------------------------------------
+    // Publicação
+    // -----------------------------------------------------------------------
+
+    /**
+     * @brief Publica em um tópico pelo índice.
+     * Se o MQTT estiver offline, enfileira para envio posterior.
+     *
+     * @param indiceTopico  Índice em `ConfigTopicos::publicar[]`.
+     * @param mensagem      Payload a publicar.
+     * @return `true` se publicado imediatamente; `false` se enfileirado.
      */
     bool publicar(int indiceTopico, const char* mensagem);
 
     /**
-     * @brief Publica uma mensagem em um tópico pelo nome completo.
+     * @brief Publica em um tópico pelo nome completo.
+     * Se o MQTT estiver offline, enfileira para envio posterior.
      *
-     * Segue a mesma lógica de enfileiramento de `publicar(indice, msg)`.
-     *
-     * @param topico    String com o tópico MQTT completo.
+     * @param topico    Tópico MQTT completo.
      * @param mensagem  Payload a publicar.
      * @return `true` se publicado imediatamente; `false` se enfileirado.
      */
@@ -226,106 +283,60 @@ public:
     // Consulta de tópicos
     // -----------------------------------------------------------------------
 
-    /**
-     * @brief Retorna o tópico de publicação pelo índice.
-     * @param indice  Índice em `TOPICOS_PUBLICAR[]`.
-     * @return Ponteiro para a string do tópico, ou `""` se inválido.
-     */
+    /** @brief Retorna o tópico de publicação pelo índice, ou `""` se inválido. */
     const char* topicoPublicacao(int indice) const;
 
-    /**
-     * @brief Retorna o tópico de recebimento pelo índice.
-     * @param indice  Índice em `TOPICOS_RECEBER[]`.
-     * @return Ponteiro para a string do tópico, ou `""` se inválido.
-     */
+    /** @brief Retorna o tópico de recebimento pelo índice, ou `""` se inválido. */
     const char* topicoRecebimento(int indice) const;
 
     // -----------------------------------------------------------------------
-    // Callbacks de eventos
+    // Callbacks
     // -----------------------------------------------------------------------
 
-    /**
-     * @brief Registra callback para mensagens MQTT recebidas.
-     *
-     * @param cb  Função `void cb(const char* topico, const String& mensagem)`.
-     *
-     * @par Exemplo
-     * @code
-     * void aoReceber(const char* topico, const String& msg) {
-     *     Serial.println("Tópico: " + String(topico));
-     *     Serial.println("Payload: " + msg);
-     * }
-     * conectividade.registrarCallbackMensagem(aoReceber);
-     * @endcode
-     */
-    void registrarCallbackMensagem(CallbackMensagemMQTT cb);
-
-    /**
-     * @brief Registra callback chamado quando o WiFi conecta.
-     * @param cb  Função `void cb()`.
-     */
-    void registrarCallbackWiFiConectado(CallbackWiFi cb);
-
-    /**
-     * @brief Registra callback chamado quando o WiFi desconecta.
-     * @param cb  Função `void cb()`.
-     */
-    void registrarCallbackWiFiDesconectado(CallbackWiFi cb);
-
-    /**
-     * @brief Registra callback chamado quando o MQTT conecta.
-     * @param cb  Função `void cb()`.
-     */
-    void registrarCallbackMQTTConectado(CallbackMQTT cb);
-
-    /**
-     * @brief Registra callback chamado quando o MQTT desconecta.
-     * @param cb  Função `void cb()`.
-     */
-    void registrarCallbackMQTTDesconectado(CallbackMQTT cb);
+    void registrarCallbackMensagem         (CallbackMensagemMQTT cb);
+    void registrarCallbackWiFiConectado    (CallbackWiFi cb);
+    void registrarCallbackWiFiDesconectado (CallbackWiFi cb);
+    void registrarCallbackMQTTConectado    (CallbackMQTT cb);
+    void registrarCallbackMQTTDesconectado (CallbackMQTT cb);
 
 private:
     // -----------------------------------------------------------------------
-    // Máquina de estados WiFi
+    // Máquina de estados
     // -----------------------------------------------------------------------
 
-    enum class EstadoWiFi : uint8_t {
-        DESCONECTADO,
-        CONECTANDO,
-        CONECTADO
-    };
+    enum class EstadoWiFi : uint8_t { DESCONECTADO, CONECTANDO, CONECTADO };
+    enum class EstadoMQTT : uint8_t { DESCONECTADO, CONECTANDO, CONECTADO };
 
-    EstadoWiFi _estadoWiFi    = EstadoWiFi::DESCONECTADO;
-    uint32_t   _inicioConexaoWiFi = 0;
-    bool       _wifiConectadoAntes = false;
+    EstadoWiFi _estadoWiFi = EstadoWiFi::DESCONECTADO;
+    EstadoMQTT _estadoMQTT = EstadoMQTT::DESCONECTADO;
 
-    static constexpr uint32_t WIFI_TIMEOUT_MS      = 15000; ///< Timeout para conectar
-    static constexpr uint32_t WIFI_RETRY_INTERVALO = 5000;  ///< Intervalo entre tentativas
+    static constexpr uint32_t WIFI_TIMEOUT_MS       = 15000;
+    static constexpr uint32_t WIFI_RETRY_INTERVALO  = 5000;
+    static constexpr uint32_t MQTT_RETRY_INTERVALO  = 5000;
+    static constexpr uint8_t  MQTT_MAX_TENTATIVAS   = 5;
+
+    uint32_t _inicioConexaoWiFi  = 0;
+    uint32_t _ultimaTentativaMQTT = 0;
+    uint8_t  _tentativasMQTT     = 0;
 
     void _processarWiFi();
-
-    // -----------------------------------------------------------------------
-    // Máquina de estados MQTT
-    // -----------------------------------------------------------------------
-
-    enum class EstadoMQTT : uint8_t {
-        DESCONECTADO,
-        CONECTANDO,
-        CONECTADO
-    };
-
-    EstadoMQTT _estadoMQTT        = EstadoMQTT::DESCONECTADO;
-    uint32_t   _inicioConexaoMQTT = 0;
-    uint32_t   _ultimaTentativaMQTT = 0;
-    uint8_t    _tentativasMQTT    = 0;
-    bool       _mqttConectadoAntes = false;
-
-    static constexpr uint32_t MQTT_RETRY_INTERVALO = 5000;  ///< Intervalo entre tentativas
-    static constexpr uint8_t  MQTT_MAX_TENTATIVAS  = 5;     ///< Tentativas antes de desistir temporariamente
-
     void _processarMQTT();
     bool _tentarConectarMQTT();
     void _inscreverTopicos();
+
+    // -----------------------------------------------------------------------
+    // Configuração armazenada
+    // -----------------------------------------------------------------------
+
+    ModoConexao  _modo = ModoConexao::SIMPLES;
+    ConfigWiFi   _wifi    = {};
+    ConfigMQTT   _mqtt    = {};
+    ConfigTLS    _tls     = {};
+    ConfigAWS    _aws     = {};
+    ConfigTopicos _topicos = {};
+
+    void _iniciarWiFi();
+    void _configurarClienteMQTT();
 
     // -----------------------------------------------------------------------
     // Clientes de rede
@@ -335,21 +346,19 @@ private:
     WiFiClientSecure  _wifiClienteSeguro;
     PubSubClient      _mqttClient;
 
-    void _configurarClienteMQTT();
-
     // -----------------------------------------------------------------------
-    // Fila de mensagens offline
+    // Fila offline (FIFO circular, tamanho fixo em compile-time)
     // -----------------------------------------------------------------------
 
     struct MensagemFila {
-        char topico[CONNECTIVITY_FILA_TOPICO_MAX];
+        char topico [CONNECTIVITY_FILA_TOPICO_MAX];
         char payload[CONNECTIVITY_FILA_PAYLOAD_MAX];
-        bool ocupado;
+        bool ocupado = false;
     };
 
-    MensagemFila _fila[CONNECTIVITY_FILA_TAMANHO];
-    uint8_t      _filaInicio = 0;
-    uint8_t      _filaFim    = 0;
+    MensagemFila _fila[CONNECTIVITY_FILA_SLOTS];
+    uint8_t      _filaInicio  = 0;
+    uint8_t      _filaFim     = 0;
     uint8_t      _filaTamanho = 0;
 
     void _enfileirar(const char* topico, const char* payload);
@@ -357,7 +366,7 @@ private:
     bool _publicarDireto(const char* topico, const char* payload);
 
     // -----------------------------------------------------------------------
-    // Callbacks registrados
+    // Callbacks
     // -----------------------------------------------------------------------
 
     CallbackMensagemMQTT _cbMensagem             = nullptr;
@@ -366,16 +375,11 @@ private:
     CallbackMQTT         _cbMQTTConectado        = nullptr;
     CallbackMQTT         _cbMQTTDesconectado     = nullptr;
 
-    // -----------------------------------------------------------------------
-    // Callback interno do PubSubClient (estático — necessário pela API)
-    // -----------------------------------------------------------------------
-
     static ESP32Connectivity* _instancia;
     static void _callbackMQTTEstatico(char* topico, byte* payload, unsigned int tamanho);
     void        _callbackMQTT(char* topico, byte* payload, unsigned int tamanho);
 };
 
-/** @brief Instância global pré-declarada para uso direto. */
 extern ESP32Connectivity conectividade;
 
 #endif // ESP32_CONNECTIVITY_H
