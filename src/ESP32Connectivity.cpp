@@ -407,19 +407,22 @@ bool ESP32Connectivity::publicar(const char* topico, const char* mensagem)
         return false;
     }
 
-    // Tenta publicar direto apenas se AMBAS as condições forem verdadeiras
-    if (_estadoMQTT == EstadoMQTT::CONECTADO && _mqttClient.connected())
-    {
-        if (_publicarDireto(topico, mensagem)) return true;
-        // Se _publicarDireto falhou mesmo conectado, cai no enfileiramento abaixo
-    }
-
-    // Qualquer falha → enfileira
-    debugAviso("MQTT indisponivel — mensagem enfileirada.");
-    debugVerbose("Topico: " + String(topico));
-    debugVerbose("Fila: " + String(_filaTamanho + 1) + "/" + String(CONNECTIVITY_FILA_SLOTS));
+    // Estratégia: enfileira SEMPRE primeiro, depois tenta enviar.
+    // Se o envio direto funcionar, remove da fila.
+    // Garante que nenhuma mensagem seja perdida mesmo se a conexão
+    // cair entre a verificação e o envio efetivo.
     _enfileirar(topico, mensagem);
-    return false;
+
+    // Tenta drenar a fila imediatamente se estiver conectado
+    bool redeOk = (_estadoWiFi == EstadoWiFi::CONECTADO) &&
+                  (WiFi.status() == WL_CONNECTED)         &&
+                  (_estadoMQTT  == EstadoMQTT::CONECTADO) &&
+                  (_mqttClient.connected());
+
+    if (redeOk) _drenaFila();
+
+    // Retorna true se a fila foi drenada completamente (mensagem enviada)
+    return (_filaTamanho == 0);
 }
 
 bool ESP32Connectivity::_publicarDireto(const char* topico, const char* payload)
@@ -458,7 +461,8 @@ void ESP32Connectivity::_enfileirar(const char* topico, const char* payload)
 
     _filaFim = (_filaFim + 1) % CONNECTIVITY_FILA_SLOTS;
     _filaTamanho++;
-    debugVerbose("Fila: " + String(_filaTamanho) + " mensagem(ns) pendente(s).");
+    debugVerbose("Mensagem enfileirada. Fila: " + String(_filaTamanho) +
+                 "/" + String(CONNECTIVITY_FILA_SLOTS));
 }
 
 void ESP32Connectivity::_drenaFila()

@@ -214,20 +214,64 @@ conectividade.beginSimples(wifi, mqtt, topicos);
 
 ### Fila offline
 
+#### Como funciona
+
+Toda mensagem passa pela fila **antes** de ser enviada — mesmo quando o MQTT está conectado. Isso garante que nenhuma mensagem seja perdida em caso de queda de conexão entre a chamada a `publicar()` e o envio efetivo pelo TCP:
+
+```
+publicar("topico", "payload")
+        │
+        ├── 1. Enfileira a mensagem (sempre)
+        │
+        └── 2. MQTT conectado?
+                  ├── Sim → tenta drenar a fila agora
+                  │           ├── Envio ok  → remove da fila → retorna true
+                  │           └── Falhou   → fica na fila  → retorna false
+                  └── Não → fica na fila até reconectar   → retorna false
+```
+
+A fila é drenada automaticamente pelo `update()` a cada `loop()` quando a conexão é restabelecida.
+
 ```cpp
-// Publica — enfileira automaticamente se offline
+// Publica — sempre enfileira antes de enviar
 conectividade.publicar(0, "payload");          // por índice
 conectividade.publicar("topico/x", "payload"); // por nome
 
-// Consulta
+// Consulta quantas mensagens estão aguardando
 conectividade.mensagensNaFila();   // uint8_t
 ```
 
-| Define | Padrão | Como sobrescrever |
-|--------|--------|-------------------|
-| `CONNECTIVITY_FILA_SLOTS` | 10 | `#define CONNECTIVITY_FILA_SLOTS 20` antes do `#include` |
-| `CONNECTIVITY_FILA_TOPICO_MAX` | 64 bytes | `#define CONNECTIVITY_FILA_TOPICO_MAX 128` |
-| `CONNECTIVITY_FILA_PAYLOAD_MAX` | 256 bytes | `#define CONNECTIVITY_FILA_PAYLOAD_MAX 512` |
+#### Configurando o tamanho da fila
+
+O tamanho da fila é definido por `#define` em tempo de compilação. Declare os defines **antes** do `#include <ESP32Connectivity.h>` no `main.cpp`:
+
+```cpp
+// ⚠ DEVE vir ANTES do #include
+#define CONNECTIVITY_FILA_SLOTS       20   // número de mensagens (padrão: 10)
+#define CONNECTIVITY_FILA_TOPICO_MAX 128   // bytes por tópico  (padrão: 64)
+#define CONNECTIVITY_FILA_PAYLOAD_MAX 512  // bytes por payload (padrão: 256)
+
+#include <ESP32Connectivity.h>
+```
+
+> Não existe método runtime para alterar o tamanho — a fila é um array estático alocado em tempo de compilação, o que evita fragmentação de memória em embarcados.
+
+| Define | Padrão | Descrição |
+|--------|--------|-----------|
+| `CONNECTIVITY_FILA_SLOTS` | `10` | Número máximo de mensagens na fila |
+| `CONNECTIVITY_FILA_TOPICO_MAX` | `64` | Tamanho máximo do tópico em bytes |
+| `CONNECTIVITY_FILA_PAYLOAD_MAX` | `256` | Tamanho máximo do payload em bytes |
+
+Quando a fila está cheia e uma nova mensagem chega, a **mensagem mais antiga é descartada** e um aviso é emitido no log (`[AVISO]`).
+
+#### Buffer do PubSubClient (tamanho de cada pacote MQTT)
+
+Diferente da fila, o buffer do PubSubClient controla o tamanho máximo de **cada mensagem individualmente**. O padrão é 256 bytes — se seu payload for maior, aumente antes do `begin`:
+
+```cpp
+conectividade.configurarBufferMQTT(1024);   // mensagens até 1 KB
+conectividade.beginSimples(wifi, mqtt, topicos);
+```
 
 ### Estado
 

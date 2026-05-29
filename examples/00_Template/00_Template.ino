@@ -33,7 +33,15 @@
 #include <Arduino.h>
 #include "secrets.h"
 #include "DebugManager.h"
-#include "ESP32Connectivity.h"
+
+// ── Tamanho da fila offline ───────────────────────────────────
+// Defina ANTES do #include <ESP32Connectivity.h>
+// Remova as linhas que não precisar alterar (os padrões serão usados)
+#define CONNECTIVITY_FILA_SLOTS       10   // número de mensagens  (padrão: 10)
+#define CONNECTIVITY_FILA_TOPICO_MAX  64   // bytes por tópico     (padrão: 64)
+#define CONNECTIVITY_FILA_PAYLOAD_MAX 256  // bytes por payload    (padrão: 256)
+
+#include <ESP32Connectivity.h>
 
 ConfigTopicos topicos = {
     TOPICOS_PUBLICAR, TOTAL_TOPICOS_PUBLICAR,

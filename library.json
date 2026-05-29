@@ -31,16 +31,15 @@
     "espressif32"
   ],
   "dependencies": [
-    
-      {
-      "owner" : "knolleary",
-      "name" : "PubSubClient",
-      "version" : "^2.8"
-      },
-      {
-      "name" : "DebugManager",
-      "version" : "https://github.com/professorThiago/DebugManager.git"
-      }
+    {
+      "owner": "knolleary",
+      "name": "PubSubClient",
+      "version": "^2.8"
+    },
+    {
+      "name": "DebugManager",
+      "version": "https://github.com/professorThiago/DebugManager.git"
+    }
   ],
   "export": {
     "include": [
