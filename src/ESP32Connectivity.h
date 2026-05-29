@@ -70,6 +70,31 @@
   #define CONNECTIVITY_FILA_PAYLOAD_MAX 256
 #endif
 
+/**
+ * @brief Habilita alocação da fila na PSRAM (ESP32 com PSRAM externa).
+ *
+ * Quando definido como 1, a fila é alocada via `ps_malloc()` na PSRAM,
+ * liberando a SRAM interna para o restante do programa.
+ *
+ * Requer:
+ *  - ESP32 com PSRAM (ex: N16R8, N8R8, N4R2)
+ *  - `board_build.arduino.memory_type = qio_opi` no platformio.ini
+ *  - `build_flags = -DBOARD_HAS_PSRAM` no platformio.ini
+ *
+ * @par platformio.ini para ESP32-S3 N16R8
+ * @code
+ * board_build.arduino.memory_type = qio_opi
+ * board_upload.flash_size = 16MB
+ * board_build.partitions = default_16MB.csv
+ * build_flags =
+ *     -DBOARD_HAS_PSRAM
+ *     -DCONNECTIVITY_USAR_PSRAM=1
+ * @endcode
+ */
+#ifndef CONNECTIVITY_USAR_PSRAM
+  #define CONNECTIVITY_USAR_PSRAM 0
+#endif
+
 // ---------------------------------------------------------------------------
 // Modo de conexão MQTT
 // ---------------------------------------------------------------------------
@@ -351,10 +376,11 @@ private:
         bool ocupado = false;
     };
 
-    MensagemFila _fila[CONNECTIVITY_FILA_SLOTS];
-    uint8_t      _filaInicio  = 0;
-    uint8_t      _filaFim     = 0;
-    uint8_t      _filaTamanho = 0;
+    MensagemFila* _fila      = nullptr;  ///< Alocado em _iniciarWiFi() — SRAM ou PSRAM
+    uint16_t      _filaSlots = 0;        ///< Número real de slots alocados
+    uint16_t      _filaInicio  = 0;
+    uint16_t      _filaFim     = 0;
+    uint16_t      _filaTamanho = 0;
 
     void _enfileirar(const char* topico, const char* payload);
     void _drenaFila();

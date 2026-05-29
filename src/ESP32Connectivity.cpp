@@ -92,8 +92,39 @@ void ESP32Connectivity::_iniciarWiFi()
 {
     _instancia = this;
 
-    // Zera a fila
-    for (uint8_t i = 0; i < CONNECTIVITY_FILA_SLOTS; i++) _fila[i].ocupado = false;
+    // ── Alocação da fila ────────────────────────────────────────
+    _filaSlots = CONNECTIVITY_FILA_SLOTS;
+
+#if CONNECTIVITY_USAR_PSRAM
+    if (psramFound())
+    {
+        _fila = static_cast<MensagemFila*>(
+            ps_malloc(_filaSlots * sizeof(MensagemFila)));
+        debugInfo("Fila alocada na PSRAM: " +
+                  String(_filaSlots) + " slots × " +
+                  String(sizeof(MensagemFila)) + " bytes = " +
+                  String(_filaSlots * sizeof(MensagemFila)) + " bytes");
+    }
+    else
+    {
+        debugAviso("PSRAM nao encontrada — usando SRAM interna.");
+        _fila = new MensagemFila[_filaSlots];
+    }
+#else
+    _fila = new MensagemFila[_filaSlots];
+    debugVerbose("Fila alocada na SRAM: " +
+                 String(_filaSlots) + " slots × " +
+                 String(sizeof(MensagemFila)) + " bytes = " +
+                 String(_filaSlots * sizeof(MensagemFila)) + " bytes");
+#endif
+
+    if (!_fila)
+    {
+        debugErro("FALHA CRITICA: nao foi possivel alocar a fila!");
+        return;
+    }
+
+    for (uint16_t i = 0; i < _filaSlots; i++) _fila[i].ocupado = false;
     _filaInicio = _filaFim = _filaTamanho = 0;
 
     _configurarClienteMQTT();
@@ -444,11 +475,11 @@ bool ESP32Connectivity::_publicarDireto(const char* topico, const char* payload)
 
 void ESP32Connectivity::_enfileirar(const char* topico, const char* payload)
 {
-    if (_filaTamanho >= CONNECTIVITY_FILA_SLOTS)
+    if (_filaTamanho >= _filaSlots)
     {
-        debugAviso("Fila cheia (" + String(CONNECTIVITY_FILA_SLOTS) +
+        debugAviso("Fila cheia (" + String(_filaSlots) +
                    " slots) — descartando mensagem mais antiga.");
-        _filaInicio = (_filaInicio + 1) % CONNECTIVITY_FILA_SLOTS;
+        _filaInicio = (_filaInicio + 1) % _filaSlots;
         _filaTamanho--;
     }
 
@@ -459,10 +490,10 @@ void ESP32Connectivity::_enfileirar(const char* topico, const char* payload)
     slot.payload[CONNECTIVITY_FILA_PAYLOAD_MAX - 1] = '\0';
     slot.ocupado = true;
 
-    _filaFim = (_filaFim + 1) % CONNECTIVITY_FILA_SLOTS;
+    _filaFim = (_filaFim + 1) % _filaSlots;
     _filaTamanho++;
     debugVerbose("Mensagem enfileirada. Fila: " + String(_filaTamanho) +
-                 "/" + String(CONNECTIVITY_FILA_SLOTS));
+                 "/" + String(_filaSlots));
 }
 
 void ESP32Connectivity::_drenaFila()
@@ -479,7 +510,7 @@ void ESP32Connectivity::_drenaFila()
             if (!_publicarDireto(slot.topico, slot.payload)) break;
             slot.ocupado = false;
         }
-        _filaInicio = (_filaInicio + 1) % CONNECTIVITY_FILA_SLOTS;
+        _filaInicio = (_filaInicio + 1) % _filaSlots;
         _filaTamanho--;
     }
 

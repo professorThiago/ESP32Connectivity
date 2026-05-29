@@ -340,3 +340,39 @@ MQTT:  DESCONECTADO ──WiFi OK──> CONECTANDO ──OK──> CONECTADO
 ## Licença
 
 MIT © 2026 [professorThiago](https://github.com/professorThiago)
+
+---
+
+## ESP32-S3 N16R8 — usando PSRAM para a fila
+
+O modelo N16R8 tem 8 MB de PSRAM externa. Por padrão a fila é alocada na SRAM interna (512 KB). Com PSRAM habilitada, a fila pode ter centenas de slots sem impactar o restante do programa.
+
+### platformio.ini para N16R8 com PSRAM
+
+```ini
+[env:esp32-s3-n16r8]
+platform  = espressif32
+board     = esp32-s3-devkitm-1
+framework = arduino
+
+board_build.arduino.memory_type = qio_opi
+board_upload.flash_size          = 16MB
+board_build.partitions           = default_16MB.csv
+
+build_flags =
+    -DBOARD_HAS_PSRAM
+    -DCONNECTIVITY_USAR_PSRAM=1      ; aloca a fila na PSRAM
+    -DCONNECTIVITY_FILA_SLOTS=200    ; 200 slots × 324 bytes = ~63 KB na PSRAM
+```
+
+### Quanto usar?
+
+| Slots | RAM usada (slot padrão 64+256) | Indicado para |
+|-------|-------------------------------|---------------|
+| 20 | 6,3 KB — SRAM | Uso geral sem PSRAM |
+| 50 | 15,8 KB — SRAM | Logging moderado sem PSRAM |
+| 200 | 63 KB — **PSRAM** | Telemetria, quedas longas |
+| 500 | 158 KB — **PSRAM** | Logging intenso |
+| 1000 | 316 KB — **PSRAM** | Máximo prático |
+
+> A PSRAM é ~10× mais lenta que a SRAM interna, mas para uma fila de mensagens (acesso esporádico) isso é imperceptível. A biblioteca detecta automaticamente se a PSRAM está disponível — se `psramFound()` retornar `false`, aloca na SRAM sem travar.

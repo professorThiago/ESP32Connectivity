@@ -131,3 +131,14 @@ void loop() {
     conectividade.update();
     loopAplicacao();
 }
+
+// Nota para ESP32-S3 N16R8 e outros modelos com PSRAM:
+// Adicione no platformio.ini para usar a PSRAM na fila:
+//
+// board_build.arduino.memory_type = qio_opi
+// board_upload.flash_size = 16MB
+// board_build.partitions = default_16MB.csv
+// build_flags =
+//     -DBOARD_HAS_PSRAM
+//     -DCONNECTIVITY_USAR_PSRAM=1
+//     -DCONNECTIVITY_FILA_SLOTS=200
