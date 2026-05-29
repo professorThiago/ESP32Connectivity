@@ -32,12 +32,8 @@
   ],
   "dependencies": [
     {
-      "name": "knolleary/PubSubClient",
-      "version": "^2.8"
-    },
-    {
-      "name": "DebugManager",
-      "version": "https://github.com/professorThiago/DebugManager.git"
+      "knolleary/PubSubClient" : "^2.8",
+      "external-repo" : "https://github.com/professorThiago/DebugManager.git"
     }
   ],
   "export": {
